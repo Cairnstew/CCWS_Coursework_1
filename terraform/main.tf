@@ -1,4 +1,3 @@
-# terraform/main.tf
 terraform {
   required_providers {
     google = {
@@ -31,7 +30,8 @@ variable "image_path" {
 }
 
 variable "image_hash" {
-  type = string
+  type        = string
+  description = "Short git SHA used to name the GCE image"
 }
 
 variable "ssh_public_key" {
@@ -44,6 +44,13 @@ provider "google" {
   region  = var.region
 }
 
+# Default VPC network
+resource "google_compute_network" "default" {
+  name                    = "default"
+  auto_create_subnetworks = true
+}
+
+# GCS bucket to store images
 resource "google_storage_bucket" "images" {
   name                        = var.bucket
   location                    = var.region
@@ -51,8 +58,7 @@ resource "google_storage_bucket" "images" {
   uniform_bucket_level_access = true
 
   lifecycle {
-    prevent_destroy = false
-    ignore_changes  = [name]
+    ignore_changes = [name]
   }
 }
 
@@ -81,7 +87,7 @@ resource "google_compute_image" "nixos" {
   }
 }
 
-# A simple VM using the image
+# VM instance
 resource "google_compute_instance" "myvm" {
   name         = "myvm"
   machine_type = "e2-small"
@@ -95,7 +101,7 @@ resource "google_compute_instance" "myvm" {
   }
 
   network_interface {
-    network = "default"
+    network = google_compute_network.default.name
     access_config {}
   }
 
@@ -107,16 +113,10 @@ resource "google_compute_instance" "myvm" {
   tags = ["nixos", "myvm"]
 }
 
-# Create default network if it doesn't exist
-resource "google_compute_network" "default" {
-  name                    = "default"
-  auto_create_subnetworks = true
-}
-
 # Firewall: SSH only
 resource "google_compute_firewall" "ssh" {
   name    = "allow-ssh-myvm"
-  network = "default"
+  network = google_compute_network.default.name
 
   allow {
     protocol = "tcp"
@@ -125,6 +125,8 @@ resource "google_compute_firewall" "ssh" {
 
   target_tags   = ["myvm"]
   source_ranges = ["0.0.0.0/0"]
+
+  depends_on = [google_compute_network.default]
 }
 
 output "ip" {

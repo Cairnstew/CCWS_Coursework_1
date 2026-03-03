@@ -25,6 +25,19 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-24.11
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v14
+        with:
+          name: ccws-coursework-one        # your cachix cache name
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -41,7 +54,7 @@ jobs:
         run: |
           nix build .#gce-image --print-build-logs
           echo "IMAGE_PATH=$(readlink -f result/*.tar.gz)" >> $GITHUB_ENV
-          echo "IMAGE_HASH=$(nix hash path result/ | head -c 12)" >> $GITHUB_ENV
+          echo "IMAGE_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Tofu init
         working-directory: terraform
