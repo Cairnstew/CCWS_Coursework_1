@@ -79,4 +79,5 @@ jobs:
             -var="bucket=${{ secrets.GCP_BUCKET }}" \
             -var="image_path=${{ env.IMAGE_PATH }}" \
             -var="image_hash=${{ env.IMAGE_HASH }}" \
-            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
+            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}" \
+            -var="vm_name=${{ vars.VM_NAME || 'myvm' }}"

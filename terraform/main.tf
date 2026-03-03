@@ -1,3 +1,4 @@
+# terraform/main.tf
 terraform {
   required_providers {
     google = {
@@ -39,12 +40,24 @@ variable "ssh_public_key" {
   description = "SSH public key for the nixos user"
 }
 
+variable "vm_name" {
+  type        = string
+  default     = "myvm"
+  description = "Name of the GCE VM instance"
+}
+
+variable "machine_type" {
+  type        = string
+  default     = "e2-small"
+  description = "GCE machine type"
+}
+
 provider "google" {
   project = var.project
   region  = var.region
 }
 
-# Look up existing default network, don't manage it
+# Look up existing default network
 data "google_compute_network" "default" {
   name = "default"
 }
@@ -88,8 +101,8 @@ resource "google_compute_image" "nixos" {
 
 # VM instance
 resource "google_compute_instance" "myvm" {
-  name         = "myvm"
-  machine_type = "e2-small"
+  name         = var.vm_name
+  machine_type = var.machine_type
   zone         = var.zone
 
   boot_disk {
@@ -109,12 +122,12 @@ resource "google_compute_instance" "myvm" {
     ssh-keys       = "nixos:${var.ssh_public_key}"
   }
 
-  tags = ["nixos", "myvm"]
+  tags = ["nixos", var.vm_name]
 }
 
 # Firewall: SSH only
 resource "google_compute_firewall" "ssh" {
-  name    = "allow-ssh-myvm"
+  name    = "allow-ssh-${var.vm_name}"
   network = data.google_compute_network.default.name
 
   allow {
@@ -122,10 +135,21 @@ resource "google_compute_firewall" "ssh" {
     ports    = ["22"]
   }
 
-  target_tags   = ["myvm"]
+  target_tags   = [var.vm_name]
   source_ranges = ["0.0.0.0/0"]
 }
 
 output "ip" {
-  value = google_compute_instance.myvm.network_interface[0].access_config[0].nat_ip
+  description = "Public IP of the VM"
+  value       = google_compute_instance.myvm.network_interface[0].access_config[0].nat_ip
+}
+
+output "ssh_command" {
+  description = "SSH command to connect to the VM"
+  value       = "ssh nixos@${google_compute_instance.myvm.network_interface[0].access_config[0].nat_ip}"
+}
+
+output "image_name" {
+  description = "Name of the GCE image that was created"
+  value       = google_compute_image.nixos.name
 }
