@@ -6,7 +6,6 @@ terraform {
       version = "~> 5.0"
     }
   }
-  Optional: remote state in GCS
   backend "gcs" {
     bucket = "my-tfstate-bucket"
     prefix = "nixos-vm"
