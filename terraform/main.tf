@@ -44,10 +44,9 @@ provider "google" {
   region  = var.region
 }
 
-# Default VPC network
-resource "google_compute_network" "default" {
-  name                    = "default"
-  auto_create_subnetworks = true
+# Look up existing default network, don't manage it
+data "google_compute_network" "default" {
+  name = "default"
 }
 
 # GCS bucket to store images
@@ -101,7 +100,7 @@ resource "google_compute_instance" "myvm" {
   }
 
   network_interface {
-    network = google_compute_network.default.name
+    network = data.google_compute_network.default.name
     access_config {}
   }
 
@@ -116,7 +115,7 @@ resource "google_compute_instance" "myvm" {
 # Firewall: SSH only
 resource "google_compute_firewall" "ssh" {
   name    = "allow-ssh-myvm"
-  network = google_compute_network.default.name
+  network = data.google_compute_network.default.name
 
   allow {
     protocol = "tcp"
@@ -125,8 +124,6 @@ resource "google_compute_firewall" "ssh" {
 
   target_tags   = ["myvm"]
   source_ranges = ["0.0.0.0/0"]
-
-  depends_on = [google_compute_network.default]
 }
 
 output "ip" {
