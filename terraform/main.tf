@@ -6,6 +6,10 @@ terraform {
       version = "~> 5.0"
     }
   }
+  backend "gcs" {
+    bucket = "ccws-coursework-1-tfstate"
+    prefix = "nixos-vm"
+  }
 }
 
 variable "project" {
@@ -13,7 +17,8 @@ variable "project" {
 }
 
 variable "bucket" {
-  type = string
+  type        = string
+  description = "GCS bucket for storing NixOS images"
 }
 
 variable "region" {
@@ -27,7 +32,8 @@ variable "zone" {
 }
 
 variable "image_path" {
-  type = string
+  type        = string
+  description = "Local path to the .tar.gz image built by nix"
 }
 
 variable "image_hash" {
@@ -100,7 +106,7 @@ resource "google_compute_image" "nixos" {
 }
 
 # VM instance
-resource "google_compute_instance" "myvm" {
+resource "google_compute_instance" "vm" {
   name         = var.vm_name
   machine_type = var.machine_type
   zone         = var.zone
@@ -141,12 +147,12 @@ resource "google_compute_firewall" "ssh" {
 
 output "ip" {
   description = "Public IP of the VM"
-  value       = google_compute_instance.myvm.network_interface[0].access_config[0].nat_ip
+  value       = google_compute_instance.vm.network_interface[0].access_config[0].nat_ip
 }
 
 output "ssh_command" {
   description = "SSH command to connect to the VM"
-  value       = "ssh nixos@${google_compute_instance.myvm.network_interface[0].access_config[0].nat_ip}"
+  value       = "ssh nixos@${google_compute_instance.vm.network_interface[0].access_config[0].nat_ip}"
 }
 
 output "image_name" {
