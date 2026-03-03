@@ -1,67 +1,95 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# -------------------------------
-# CONFIGURATION
-# -------------------------------
-PROJECT_ID="${1:-}"   # pass your project ID as first argument
-SA_NAME="${2:-ccws-sa}" # service account name
-SA_DISPLAY_NAME="${3:-CCWS Coursework Service Account}"
-KEY_FILE="${4:-ccws-key.json}" # output key file
-ROLE="${5:-roles/editor}" # default role, can adjust
+# ── Config ────────────────────────────────────────────────────────────────────
+PROJECT=${PROJECT:-}
+BUCKET=${BUCKET:-}
+GITHUB_REPO="${YOUR_GITHUB_ORG}/${YOUR_REPO}"
+SERVICE_ACCOUNT="github-actions"
+POOL_NAME="github-pool"
+PROVIDER_NAME="github-provider"
+# ─────────────────────────────────────────────────────────────────────────────
 
-# -------------------------------
-# CHECKS
-# -------------------------------
-if [[ -z "$PROJECT_ID" ]]; then
-    echo "Usage: $0 PROJECT_ID [SA_NAME] [SA_DISPLAY_NAME] [KEY_FILE] [ROLE]"
-    exit 1
+SA_EMAIL="${SERVICE_ACCOUNT}@${PROJECT}.iam.gserviceaccount.com"
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT" --format="value(projectNumber)")
+
+echo "==> Project:        $PROJECT"
+echo "==> Project number: $PROJECT_NUMBER"
+echo "==> Service account: $SA_EMAIL"
+echo "==> GitHub repo:    $GITHUB_REPO"
+echo ""
+
+# ── 1. Service account ────────────────────────────────────────────────────────
+echo "==> [1/6] Creating service account..."
+if gcloud iam service-accounts describe "$SA_EMAIL" --project="$PROJECT" &>/dev/null; then
+  echo "    Already exists, skipping."
+else
+  gcloud iam service-accounts create "$SERVICE_ACCOUNT" \
+    --display-name="GitHub Actions" \
+    --project="$PROJECT"
 fi
 
-echo "Using project: $PROJECT_ID"
-echo "Service account name: $SA_NAME"
-echo "Display name: $SA_DISPLAY_NAME"
-echo "Key file: $KEY_FILE"
-echo "Role: $ROLE"
+# ── 2. IAM roles ──────────────────────────────────────────────────────────────
+echo "==> [2/6] Granting IAM roles..."
+for ROLE in roles/compute.admin roles/storage.admin roles/iam.serviceAccountUser; do
+  gcloud projects add-iam-policy-binding "$PROJECT" \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="$ROLE" \
+    --condition=None \
+    --quiet
+  echo "    Granted $ROLE"
+done
 
-# Ensure gcloud is logged in
-if ! gcloud auth list --format="value(account)" | grep -q '.'; then
-    echo "You must be logged in with a Google account first."
-    exit 1
+# ── 3. Workload identity pool ─────────────────────────────────────────────────
+echo "==> [3/6] Creating workload identity pool..."
+if gcloud iam workload-identity-pools describe "$POOL_NAME" \
+     --location="global" --project="$PROJECT" &>/dev/null; then
+  echo "    Already exists, skipping."
+else
+  gcloud iam workload-identity-pools create "$POOL_NAME" \
+    --location="global" \
+    --display-name="GitHub Actions Pool" \
+    --project="$PROJECT"
 fi
 
-# -------------------------------
-# CREATE SERVICE ACCOUNT
-# -------------------------------
-echo "Creating service account..."
-gcloud iam service-accounts create "$SA_NAME" \
-    --project "$PROJECT_ID" \
-    --display-name "$SA_DISPLAY_NAME" || true
+# ── 4. OIDC provider ──────────────────────────────────────────────────────────
+echo "==> [4/6] Creating OIDC provider..."
+if gcloud iam workload-identity-pools providers describe "$PROVIDER_NAME" \
+     --location="global" \
+     --workload-identity-pool="$POOL_NAME" \
+     --project="$PROJECT" &>/dev/null; then
+  echo "    Already exists, skipping."
+else
+  gcloud iam workload-identity-pools providers create-oidc "$PROVIDER_NAME" \
+    --location="global" \
+    --workload-identity-pool="$POOL_NAME" \
+    --issuer-uri="https://token.actions.githubusercontent.com" \
+    --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+    --attribute-condition="assertion.repository=='${GITHUB_REPO}'" \
+    --project="$PROJECT"
+fi
 
-SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
-echo "Service account created: $SA_EMAIL"
+# ── 5. Bind SA to pool ────────────────────────────────────────────────────────
+echo "==> [5/6] Binding service account to workload identity pool..."
+gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_NAME}/attribute.repository/${GITHUB_REPO}" \
+  --project="$PROJECT"
 
-# -------------------------------
-# GRANT ROLE
-# -------------------------------
-echo "Granting role $ROLE to $SA_EMAIL..."
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="serviceAccount:$SA_EMAIL" \
-    --role="$ROLE"
+# ── 6. Print GitHub secrets ───────────────────────────────────────────────────
+echo ""
+echo "==> [6/6] Done! Add these to GitHub → Settings → Secrets → Actions:"
+echo ""
 
-# -------------------------------
-# CREATE KEY
-# -------------------------------
-echo "Creating key file..."
-gcloud iam service-accounts keys create "$KEY_FILE" \
-    --iam-account "$SA_EMAIL"
+PROVIDER_RESOURCE=$(gcloud iam workload-identity-pools providers describe "$PROVIDER_NAME" \
+  --location="global" \
+  --workload-identity-pool="$POOL_NAME" \
+  --project="$PROJECT" \
+  --format="value(name)")
 
-chmod 600 "$KEY_FILE"
-echo "Key saved to $KEY_FILE"
-export GOOGLE_APPLICATION_CREDENTIALS="$KEY_FILE"
-
-# -------------------------------
-# DONE
-# -------------------------------
-echo "Service account $SA_EMAIL ready with key $KEY_FILE"
-echo "Activate with: gcloud auth activate-service-account --key-file=$KEY_FILE"
+echo "  GCP_PROJECT:                    $PROJECT"
+echo "  GCP_SERVICE_ACCOUNT:            $SA_EMAIL"
+echo "  GCP_WORKLOAD_IDENTITY_PROVIDER: $PROVIDER_RESOURCE"
+echo "  GCP_BUCKET:                     $BUCKET"
+echo ""
+echo "==> All done."
