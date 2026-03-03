@@ -44,12 +44,16 @@ provider "google" {
   region  = var.region
 }
 
-# GCS bucket to store images
 resource "google_storage_bucket" "images" {
   name                        = var.bucket
   location                    = var.region
   force_destroy               = true
   uniform_bucket_level_access = true
+
+  lifecycle {
+    prevent_destroy = false
+    ignore_changes  = [name]
+  }
 }
 
 # Upload the .tar.gz built by nix
@@ -101,6 +105,12 @@ resource "google_compute_instance" "myvm" {
   }
 
   tags = ["nixos", "myvm"]
+}
+
+# Create default network if it doesn't exist
+resource "google_compute_network" "default" {
+  name                    = "default"
+  auto_create_subnetworks = true
 }
 
 # Firewall: SSH only
