@@ -6,18 +6,38 @@ terraform {
       version = "~> 5.0"
     }
   }
-  backend "gcs" {
-    bucket = "my-tfstate-bucket"
-    prefix = "nixos-vm"
-  }
 }
 
-variable "project"    { type = string }
-variable "bucket"     { type = string }
-variable "region"     { type = string default = "us-central1" }
-variable "zone"       { type = string default = "us-central1-a" }
-variable "image_path" { type = string }
-variable "image_hash" { type = string }
+variable "project" {
+  type = string
+}
+
+variable "bucket" {
+  type = string
+}
+
+variable "region" {
+  type    = string
+  default = "us-central1"
+}
+
+variable "zone" {
+  type    = string
+  default = "us-central1-a"
+}
+
+variable "image_path" {
+  type = string
+}
+
+variable "image_hash" {
+  type = string
+}
+
+variable "ssh_public_key" {
+  type        = string
+  description = "SSH public key for the nixos user"
+}
 
 provider "google" {
   project = var.project
@@ -66,18 +86,18 @@ resource "google_compute_instance" "myvm" {
   boot_disk {
     initialize_params {
       image = google_compute_image.nixos.self_link
-      size  = 20  # GB
+      size  = 20
     }
   }
 
   network_interface {
     network = "default"
-    access_config {}  # ephemeral public IP; remove for internal-only
+    access_config {}
   }
 
   metadata = {
-    enable-oslogin = "FALSE"  # NixOS manages SSH itself
-    ssh-keys       = "nixos:${file("~/.ssh/id_ed25519.pub")}"
+    enable-oslogin = "FALSE"
+    ssh-keys       = "nixos:${var.ssh_public_key}"
   }
 
   tags = ["nixos", "myvm"]
@@ -94,7 +114,7 @@ resource "google_compute_firewall" "ssh" {
   }
 
   target_tags   = ["myvm"]
-  source_ranges = ["0.0.0.0/0"]  # tighten this in prod
+  source_ranges = ["0.0.0.0/0"]
 }
 
 output "ip" {
