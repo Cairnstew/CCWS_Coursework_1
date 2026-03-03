@@ -56,6 +56,10 @@ jobs:
           echo "IMAGE_PATH=$(readlink -f result/*.tar.gz)" >> $GITHUB_ENV
           echo "IMAGE_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
+      - name: Tofu init
+        working-directory: terraform
+        run: tofu init
+
       - name: Tofu import existing resources
         working-directory: terraform
         run: |
