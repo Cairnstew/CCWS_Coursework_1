@@ -1,11 +1,17 @@
 # flake.nix
 {
   inputs = {
+    nixpkgs-terraform.url = "github:stackbuilders/nixpkgs-terraform";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  nixConfig = {
+    extra-substituters = "https://nixpkgs-terraform.cachix.org";
+    extra-trusted-public-keys = "nixpkgs-terraform.cachix.org-1:8Sit092rIdAVENA3ZVeH9hzSiqI/jng6JiCrQ1Dmusw=";
+  };
+
+  outputs = { self, nixpkgs-terraform, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let 
         pkgs = nixpkgs.legacyPackages.${system}; 
@@ -14,24 +20,23 @@
           #kubectl
           gcloud-man-pages
         ]);
+        terraform = nixpkgs-terraform.packages.${system}."1.14";
       in
       {
         # Dev shell with all the tools you need
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
+            terraform 
+            # pkgs.packer
             opentofu
             gcloud
           ];
 
           shellHook = ''
-            KEY_FILE="ccws-key.json"
-            if [ -f "$KEY_FILE" ]; then
-              echo "🔑 Found service account key: $KEY_FILE"
-              gcloud auth activate-service-account --key-file="$KEY_FILE"
-              echo "✅ Service account activated!"
-            else
-              echo "⚠️ No service account key found → run: gcloud auth login"
-            fi
+            echo "Welcome to the GCE image builder dev shell!"
+            echo "Run 'gcloud auth application-default login --scopes="https://www.googleapis.com/auth/cloud-platform"' to authenticate with GCP."
+            echo "Run 'terraform init' in the terraform/ directory to initialize the Terraform configuration."
+            echo "Get list of projects with 'gcloud projects list' and set the project_id variable in terraform.tfvars."
             '';
         };
 

@@ -1,4 +1,9 @@
-# terraform/main.tf
+# ============================================================
+# CCWS Coursework 1 - Terraform Configuration
+# Region: europe-west2 (London)
+# Web Server: Nginx
+# ============================================================
+
 terraform {
   required_providers {
     google = {
@@ -6,156 +11,157 @@ terraform {
       version = "~> 5.0"
     }
   }
-  backend "gcs" {
-    bucket = "ccws-coursework-1-tfstate"
-    prefix = "nixos-vm"
-  }
 }
 
-variable "project" {
-  type = string
-}
+# ============================================================
+# Variables - fill these in with your own values
+# ============================================================
 
-variable "bucket" {
+variable "project_id" {
+  description = "Your GCP Project ID"
   type        = string
-  description = "GCS bucket for storing NixOS images"
 }
 
-variable "region" {
-  type    = string
-  default = "us-central1"
-}
-
-variable "zone" {
-  type    = string
-  default = "us-central1-a"
-}
-
-variable "image_path" {
+variable "student_id" {
+  description = "Your Student ID e.g. S1234567"
   type        = string
-  description = "Local path to the .tar.gz image built by nix"
 }
 
-variable "image_hash" {
-  type        = string
-  description = "Short git SHA used to name the GCE image"
-}
-
-variable "ssh_public_key" {
-  type        = string
-  description = "SSH public key for the nixos user"
-}
-
-variable "vm_name" {
-  type        = string
-  default     = "myvm"
-  description = "Name of the GCE VM instance"
-}
-
-variable "machine_type" {
-  type        = string
-  default     = "e2-small"
-  description = "GCE machine type"
-}
+# ============================================================
+# Provider
+# ============================================================
 
 provider "google" {
-  project = var.project
-  region  = var.region
+  project = var.project_id
+  region  = "europe-west2"
+  zone    = "europe-west2-b"
 }
 
-# Look up existing default network
-data "google_compute_network" "default" {
-  name = "default"
-}
+# ============================================================
+# TASK 1a - Compute Engine Instance (e2-micro = low cost)
+# ============================================================
 
-# GCS bucket to store images
-resource "google_storage_bucket" "images" {
-  name                        = var.bucket
-  location                    = var.region
-  force_destroy               = true
-  uniform_bucket_level_access = true
-
-  lifecycle {
-    ignore_changes = [name]
-  }
-}
-
-# Upload the .tar.gz built by nix
-resource "google_storage_bucket_object" "nixos_image" {
-  name   = "nixos-${var.image_hash}.tar.gz"
-  source = var.image_path
-  bucket = google_storage_bucket.images.name
-}
-
-# Register it as a GCE image
-resource "google_compute_image" "nixos" {
-  name   = "nixos-${var.image_hash}"
-  family = "nixos"
-
-  raw_disk {
-    source = google_storage_bucket_object.nixos_image.self_link
-  }
-
-  guest_os_features {
-    type = "VIRTIO_SCSI_MULTIQUEUE"
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-# VM instance
-resource "google_compute_instance" "vm" {
-  name         = var.vm_name
-  machine_type = var.machine_type
-  zone         = var.zone
+resource "google_compute_instance" "web_server" {
+  name         = "ccws-web-server"
+  machine_type = "e2-micro"   # Low cost, suitable for web serving
+  zone         = "europe-west2-b"
 
   boot_disk {
     initialize_params {
-      image = google_compute_image.nixos.self_link
-      size  = 20
+      image = "debian-cloud/debian-11"
+      size  = 10  # GB
     }
   }
 
   network_interface {
-    network = data.google_compute_network.default.name
-    access_config {}
+    network = "default"
+    access_config {}  # Assigns a public IP
   }
 
-  metadata = {
-    enable-oslogin = "FALSE"
-    ssh-keys       = "nixos:${var.ssh_public_key}"
-  }
+  # Allow HTTP and HTTPS traffic (Task 1a requirement)
+  tags = ["http-server", "https-server"]
 
-  tags = ["nixos", var.vm_name]
+  # Task 1b - Install and start Nginx on boot
+  metadata_startup_script = <<-EOT
+    #!/bin/bash
+    apt-get update -y
+    apt-get install -y nginx
+    systemctl enable nginx
+    systemctl start nginx
+
+    # Task 1c - Create a directory for serving images
+    mkdir -p /var/www/html/images
+
+    # Create a simple default index page
+    cat > /var/www/html/index.html <<EOF
+    <html>
+      <body>
+        <h1>CCWS Coursework 1</h1>
+        <p>Web server is running.</p>
+      </body>
+    </html>
+    EOF
+  EOT
 }
 
-# Firewall: SSH only
-resource "google_compute_firewall" "ssh" {
-  name    = "allow-ssh-${var.vm_name}"
-  network = data.google_compute_network.default.name
+# Firewall rule - allow HTTP
+resource "google_compute_firewall" "allow_http" {
+  name    = "allow-http"
+  network = "default"
 
   allow {
     protocol = "tcp"
-    ports    = ["22"]
+    ports    = ["80"]
   }
 
-  target_tags   = [var.vm_name]
   source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["http-server"]
 }
 
-output "ip" {
-  description = "Public IP of the VM"
-  value       = google_compute_instance.vm.network_interface[0].access_config[0].nat_ip
+# Firewall rule - allow HTTPS
+resource "google_compute_firewall" "allow_https" {
+  name    = "allow-https"
+  network = "default"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["443"]
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["https-server"]
 }
 
-output "ssh_command" {
-  description = "SSH command to connect to the VM"
-  value       = "ssh nixos@${google_compute_instance.vm.network_interface[0].access_config[0].nat_ip}"
+# ============================================================
+# TASK 2a - Cloud Storage Bucket
+# Multi-region (replicates to 2 regions), STANDARD = frequent access
+# ============================================================
+
+resource "google_storage_bucket" "images_bucket" {
+  name          = "${var.project_id}-ccws-images"  # Must be globally unique
+  location      = "EU"           # Multi-region covering europe-west2
+  storage_class = "STANDARD"     # Appropriate for frequent access
+
+  uniform_bucket_level_access = true  # Required for public access via IAM
+
+  cors {
+    origin          = ["*"]
+    method          = ["GET"]
+    response_header = ["Content-Type"]
+    max_age_seconds = 3600
+  }
 }
 
-output "image_name" {
-  description = "Name of the GCE image that was created"
-  value       = google_compute_image.nixos.name
+# Task 2b - Make bucket publicly readable
+resource "google_storage_bucket_iam_member" "public_read" {
+  bucket = google_storage_bucket.images_bucket.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
+}
+
+# ============================================================
+# App Engine - enable the application (required before deploying apps)
+# ============================================================
+
+resource "google_app_engine_application" "app" {
+  location_id = "europe-west2"  # London region for App Engine
+}
+
+# ============================================================
+# Outputs - useful values to copy after terraform apply
+# ============================================================
+
+output "compute_instance_ip" {
+  description = "Public IP of your Compute Engine instance"
+  value       = google_compute_instance.web_server.network_interface[0].access_config[0].nat_ip
+}
+
+output "storage_bucket_name" {
+  description = "Name of your Cloud Storage bucket"
+  value       = google_storage_bucket.images_bucket.name
+}
+
+output "storage_bucket_url" {
+  description = "Public URL of your Cloud Storage bucket"
+  value       = "https://storage.googleapis.com/${google_storage_bucket.images_bucket.name}"
 }
