@@ -2,3 +2,37 @@ ccws-key.json
 result
 .envrc
 old-flake.nix
+.direnv
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfvars
+*.tfplan
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+env/
+.venv/
+
+# App Engine
+.gcloudignore
+
+# GCP credentials - NEVER commit these
+*.json
+application_default_credentials.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
