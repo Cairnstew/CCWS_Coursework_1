@@ -17,9 +17,6 @@ import requests
 
 app = Flask(__name__)
 
-# ============================================================
-# Replace these values with your own
-# ============================================================
 BUCKET_NAME = "ccws-coursework-1-ccws-images"
 STUDENT_ID  = "S2555839"
 
@@ -30,13 +27,13 @@ IMAGES = {
     "3": "city.jpg"
 }
 
-# GCS JSON API endpoint for object metadata
+# GCS JSON API endpoint 
 GCS_API_BASE = "https://storage.googleapis.com/storage/v1/b/{bucket}/o/{object}"
 
 @app.route('/')
 def index():
     user_email = request.headers.get('X-Goog-Authenticated-User-Email', 'Not available')
-    user_email = user_email.split(':')[-1]  # strip 'accounts.google.com:' prefix
+    user_email = user_email.split(':')[-1]  # needed for strip
 
     return f"""
     <!DOCTYPE html>
@@ -63,13 +60,13 @@ def serve_metadata(image_id):
 
     filename = IMAGES[image_id]
 
-    # Build the GCS REST API URL for this object's metadata
+    # Build the URL
     api_url = GCS_API_BASE.format(
         bucket=BUCKET_NAME,
         object=filename
     )
 
-    # Call the GCS REST API fresh on every request (Task 3b requirement)
+    # Call the GCS REST API every request
     response = requests.get(api_url)
 
     if response.status_code != 200:
@@ -79,7 +76,7 @@ def serve_metadata(image_id):
 
     gcs_data = response.json()
 
-    # Return the required subset of metadata
+    # Return metadata + project info
     metadata = {
         "student_id":      STUDENT_ID,
         "request_time":    datetime.now().strftime("%A %d %B %Y, %H:%M:%S"),

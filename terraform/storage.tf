@@ -6,7 +6,7 @@
 resource "google_storage_bucket" "images_bucket" {
   name          = "${var.project_id}-ccws-images"
   location      = "EU"           # Multi-region, replicates across Europe
-  storage_class = "STANDARD"     # Appropriate for frequent access
+  storage_class = "STANDARD"     # Appropriate
   force_destroy = true
 
   uniform_bucket_level_access = true
@@ -19,7 +19,7 @@ resource "google_storage_bucket" "images_bucket" {
   }
 }
 
-# Task 2b - Make all objects in bucket publicly readable
+# Task 2b - Make all objects in bucket publicly readable (For the time being)
 resource "google_storage_bucket_iam_member" "public_read" {
   bucket = google_storage_bucket.images_bucket.name
   role   = "roles/storage.objectViewer"

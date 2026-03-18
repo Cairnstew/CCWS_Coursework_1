@@ -10,19 +10,21 @@ resource "google_compute_instance" "web_server" {
   boot_disk {
     initialize_params {
       image = "debian-cloud/debian-11"
-      size  = 10  # GB
+      size  = 10  # Plenty for Use case
     }
   }
 
   network_interface {
     network = "default"
-    access_config {}  # Assigns a public IP
+    access_config {}  # Needed. Assigns a public IP
   }
 
   # Allow HTTP, HTTPS and SSH traffic
+  # Needed for public access
   tags = ["http-server", "https-server", "ssh-server"]
 
   # Task 1b - Install and start Nginx on boot
+  # Simple Inline bash script
   metadata_startup_script = <<-EOT
     #!/bin/bash
     apt-get update -y
