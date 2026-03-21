@@ -8,10 +8,6 @@ from flask import Flask, abort
 
 app = Flask(__name__)
 
-# ============================================================
-# Replace YOUR_BUCKET_NAME with your actual bucket name
-# e.g. "my-project-123456-ccws-images"
-# ============================================================
 BUCKET_NAME = "ccws-coursework-1-ccws-images"
 BUCKET_BASE_URL = f"https://storage.googleapis.com/{BUCKET_NAME}"
 
